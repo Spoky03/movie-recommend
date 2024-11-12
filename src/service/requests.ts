@@ -7,7 +7,7 @@ const API_KEY = process.env.TMDB_API_KEY;
 
 const searchMovies = async (query: string) => {
   const response = await axios.get(
-    `${BASE_URL}/search/movie?query=${query}&language=en-US&page=1&api_key=${API_KEY}`,
+    `${BASE_URL}/search/movie?query=${query}&pages=1&language=en-US&page=1&api_key=${API_KEY}`,
     {
         headers: {
             'accept': 'application/json',
