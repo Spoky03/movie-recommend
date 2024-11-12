@@ -33,8 +33,9 @@ app.get("/", (_req: Request, res: Response) => {
   }
 });
 
-app.get("/movies", async (_req: Request, res: Response) => {
-  const movies = await moviesService.getPopularMovies();
+app.get("/search", async (req: Request, res: Response) => {
+  const query = req.query.query as string;
+  const movies = await moviesService.searchMovies(query);
   res.json(movies);
 });
 // User registration
@@ -75,7 +76,7 @@ app.post("/login", async (req: Request, res: Response) => {
 });
 
 // Protected route example
-app.get("/movies", authenticateJWT, (_req: Request, res: Response) => {
+app.get("/movies2", authenticateJWT, (_req: Request, res: Response) => {
   try {
     movies.find().toArray()
       .then((result: any) => res.json(result))

@@ -5,9 +5,9 @@ dotenv.config();
 const BASE_URL = 'https://api.themoviedb.org/3';
 const API_KEY = process.env.TMDB_API_KEY;
 
-const getPopularMovies = async () => {
+const searchMovies = async (query: string) => {
   const response = await axios.get(
-    `${BASE_URL}/discover/movie?include_adult=false&include_video=false&language=en-US&page=1&sort_by=popularity.desc&api_key=${API_KEY}`,
+    `${BASE_URL}/search/movie?query=${query}&language=en-US&page=1&api_key=${API_KEY}`,
     {
         headers: {
             'accept': 'application/json',
@@ -18,4 +18,4 @@ const getPopularMovies = async () => {
   return response.data;
 };
 
-export { getPopularMovies };
+export { searchMovies };
