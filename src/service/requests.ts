@@ -1,21 +1,18 @@
 // TMDB requests
-import axios from 'axios';
 import dotenv from "dotenv";
 dotenv.config();
-const BASE_URL = 'https://api.themoviedb.org/3';
-const API_KEY = process.env.TMDB_API_KEY;
+import * as requestWrapper from '../lib/helpers';
+import { Movie } from "../interfaces/movie";
 
 const searchMovies = async (query: string) => {
-  const response = await axios.get(
-    `${BASE_URL}/search/movie?query=${query}&pages=1&language=en-US&page=1&api_key=${API_KEY}`,
-    {
-        headers: {
-            'accept': 'application/json',
-        }
-    }
-
-  );
-  return response.data;
+  const response = await requestWrapper.getWrapper(`/search/movie?query=${query}&pages=1&language=en-US&page=1`);
+  response.data.results.sort((a: Movie, b: Movie) => b.popularity - a.popularity);
+  return response.data.results;
+};
+const getSimilarMovies = async (movieId: number) => {
+  const response = await requestWrapper.getWrapper(`/movie/${movieId}/similar?language=en-US&page=1`);
+  response.data.results.sort((a: Movie, b: Movie) => b.popularity - a.popularity);
+  return response.data.results;
 };
 
-export { searchMovies };
+export { searchMovies, getSimilarMovies };

@@ -21,6 +21,7 @@ client.connect();
 const app: Express = express();
 const database = client.db("movie-recommend");
 const movies = database.collection("movies");
+const rating = database.collection("rating");
 const users = database.collection("users");
 app.use(express.json());
 app.get("/", (_req: Request, res: Response) => {
@@ -33,13 +34,43 @@ app.get("/", (_req: Request, res: Response) => {
   }
 });
 
-app.get("/search", async (req: Request, res: Response) => {
+app.get("/api/search", async (req: Request, res: Response) => {
   const query = req.query.query as string;
   const movies = await moviesService.searchMovies(query);
   res.json(movies);
 });
+app.get("/api/similar", async (req: Request, res: Response) => {
+  const movieId = parseInt(req.query.movieId as string);
+  const movies = await moviesService.getSimilarMovies(movieId);
+  res.json(movies);
+});
+// Rate a movie
+app.post("/api/rate", authenticateJWT, async (req: Request, res: Response) => {
+  const { movieId, score } = req.body;
+  const username = (req as any).user.username;
+
+  const user = await users.findOne({ username });
+  if (!user) {
+    return res.status(400).send("User not found");
+  }
+  if (score < 1 || score > 5) {
+    return res.status(400).send("Invalid score");
+  }
+  if (isNaN(movieId) || movieId === null) {
+    return res.status(400).send("Invalid movieId");
+  }
+
+  const userRating = await rating.findOne({ username, movieId });
+  if (userRating) {
+    await rating.updateOne({ username, movieId }, { $set: { score } });
+  } else {
+    await rating.insertOne({ username, movieId, score });
+  }
+  res.send("Movie rated successfully");
+  return
+});
 // User registration
-app.post("/register", async (req: Request, res: Response) => {
+app.post("/api/register", async (req: Request, res: Response) => {
   const { username, password } = req.body;
 
   const user = await users.findOne({ username });
@@ -56,7 +87,7 @@ app.post("/register", async (req: Request, res: Response) => {
 });
 
 // User login
-app.post("/login", async (req: Request, res: Response) => {
+app.post("/api/login", async (req: Request, res: Response) => {
   console.log(req.body);
   const { username, password } = req.body;
 
@@ -76,7 +107,7 @@ app.post("/login", async (req: Request, res: Response) => {
 });
 
 // Protected route example
-app.get("/movies2", authenticateJWT, (_req: Request, res: Response) => {
+app.get("/api/movies2", authenticateJWT, (_req: Request, res: Response) => {
   try {
     movies.find().toArray()
       .then((result: any) => res.json(result))
