@@ -1,4 +1,7 @@
+import { ObjectId } from "mongodb";
+
 export interface Movie {
+  _id?: ObjectId;
   adult: boolean;
   backdrop_path: string;
   genre_ids: number[];

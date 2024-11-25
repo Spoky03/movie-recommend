@@ -6,7 +6,7 @@ import { MongoClient, ServerApiVersion } from "mongodb";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { authenticateJWT } from "./middleware/auth";
-import { JWT_SECRET, PORT} from "./config";
+import { JWT_SECRET, PORT } from "./config";
 import { createUsersCollection } from "./lib/schemas";
 import { Movie } from "./interfaces/movie";
 const DB_URI = process.env.DB_URI;
@@ -34,51 +34,60 @@ const movies = database.collection("movies");
 const rating = database.collection("rating");
 const users = database.collection("users");
 app.use(express.json());
-app.get("/", (_req: Request, res: Response) => {
+app.get(["/", "/api"], (_req: Request, res: Response) => {
+  //list all available routes
+  res.json({
+    routes: [
+      "/api/movies",
+      "/api/search",
+      "/api/similar",
+      "/api/rate",
+      "/api/register",
+      "/api/login",
+    ],
+  });
+});
+function cacheMovieToDb(movie: Movie) {
+  movies.findOne({ id: movie.id }).then((result) => {
+    if (!result) {
+      movies.insertOne(movie);
+    }
+  });
+}
+function searchMovies(query: string) {
+  // find movies by title or original_title
+  return movies
+    .find({
+      $or: [
+        { title: { $regex: query, $options: "i" } },
+        { original_title: { $regex: query, $options: "i" } },
+      ],
+    })
+    .toArray();
+}
+app.get("/api/movies", async (_req: Request, res: Response) => {
   try {
-    movies.find().toArray()
+    movies
+      .find()
+      .toArray()
       .then((result: any) => res.json(result))
       .catch((err: any) => res.status(500).send(err));
   } catch (error) {
     res.status;
   }
 });
-function cacheMovieToDb(movie: Movie) {
-  movies.findOne({ id: movie.id })
-    .then((result) => {
-      if (!result) {
-        movies.insertOne(movie);
-      }
-    });
-}
-function searchMovies(query: string) {
-  // find movies by title or original_title
-  return movies.find({
-    $or: [
-      { title: { $regex: query, $options: "i" } },
-      { original_title: { $regex: query, $options: "i" } },
-    ],
-  }).toArray();
-}
-app.get("/api/movies", async (_req: Request, res: Response) => {
-  try {
-    movies.find().toArray()
-      .then((result: any) => res.json(result))
-      .catch((err: any) => res.status(500).send
-        (err));
-  } catch (error) {
-    res.status;
-  }
-});
 app.get("/api/search", async (req: Request, res: Response) => {
   const query = req.query.query as string;
+  if (!query) {
+    return res.status(400).send("Missing query parameter");
+  }
   const movies = await searchMovies(query);
   if (movies.length === 0) {
     const movies = await moviesService.searchMovies(query);
     movies.forEach(cacheMovieToDb);
-    res.json(movies);
+    return res.json(movies);
   } else {
-    res.json(movies);
+    return res.json(movies.map(({ _id, ...rest }) => rest));
   }
 });
 app.get("/api/similar", async (req: Request, res: Response) => {
@@ -116,7 +125,7 @@ app.post("/api/rate", authenticateJWT, async (req: Request, res: Response) => {
     await rating.insertOne({ username, movieId, score });
   }
   res.send("Movie rated successfully");
-  return
+  return;
 });
 // User registration
 app.post("/api/register", async (req: Request, res: Response) => {
@@ -135,6 +144,11 @@ app.post("/api/register", async (req: Request, res: Response) => {
   return;
 });
 
+app.get("/api/img/:uri", async (req: Request, res: Response) => {
+  const uri = req.params.uri;
+  return res.redirect(`https://image.tmdb.org/t/p/w500/${uri}`);
+});
+
 // User login
 app.post("/api/login", async (req: Request, res: Response) => {
   const { username, password } = req.body;
@@ -149,11 +163,14 @@ app.post("/api/login", async (req: Request, res: Response) => {
     return res.status(400).send("Invalid username or password");
   }
 
-  const token = jwt.sign({ _id: user._id, username: user.username }, JWT_SECRET, { expiresIn: "200h" });
+  const token = jwt.sign(
+    { _id: user._id, username: user.username },
+    JWT_SECRET,
+    { expiresIn: "200h" }
+  );
   res.header("Authorization", `Bearer ${token}`).send("Logged in successfully");
   return token;
 });
-
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
