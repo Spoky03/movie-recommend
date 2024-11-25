@@ -7,6 +7,8 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { authenticateJWT } from "./middleware/auth";
 import { JWT_SECRET, PORT} from "./config";
+import { createUsersCollection } from "./lib/schemas";
+import { Movie } from "./interfaces/movie";
 const DB_URI = process.env.DB_URI;
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(DB_URI ?? "", {
@@ -17,9 +19,17 @@ const client = new MongoClient(DB_URI ?? "", {
   },
 });
 dotenv.config();
-client.connect();
-const app: Express = express();
 const database = client.db("movie-recommend");
+(async () => {
+  try {
+    await client.connect();
+    await createUsersCollection(database);
+    console.log("Connected to the database");
+  } catch (error) {
+    console.error("Failed to connect to the database", error);
+  }
+})();
+const app: Express = express();
 const movies = database.collection("movies");
 const rating = database.collection("rating");
 const users = database.collection("users");
@@ -33,11 +43,43 @@ app.get("/", (_req: Request, res: Response) => {
     res.status;
   }
 });
-
+function cacheMovieToDb(movie: Movie) {
+  movies.findOne({ id: movie.id })
+    .then((result) => {
+      if (!result) {
+        movies.insertOne(movie);
+      }
+    });
+}
+function searchMovies(query: string) {
+  // find movies by title or original_title
+  return movies.find({
+    $or: [
+      { title: { $regex: query, $options: "i" } },
+      { original_title: { $regex: query, $options: "i" } },
+    ],
+  }).toArray();
+}
+app.get("/api/movies", async (_req: Request, res: Response) => {
+  try {
+    movies.find().toArray()
+      .then((result: any) => res.json(result))
+      .catch((err: any) => res.status(500).send
+        (err));
+  } catch (error) {
+    res.status;
+  }
+});
 app.get("/api/search", async (req: Request, res: Response) => {
   const query = req.query.query as string;
-  const movies = await moviesService.searchMovies(query);
-  res.json(movies);
+  const movies = await searchMovies(query);
+  if (movies.length === 0) {
+    const movies = await moviesService.searchMovies(query);
+    movies.forEach(cacheMovieToDb);
+    res.json(movies);
+  } else {
+    res.json(movies);
+  }
 });
 app.get("/api/similar", async (req: Request, res: Response) => {
   const movieId = parseInt(req.query.movieId as string);
@@ -45,6 +87,13 @@ app.get("/api/similar", async (req: Request, res: Response) => {
   res.json(movies);
 });
 // Rate a movie
+app.get("/api/rate", authenticateJWT, async (req: Request, res: Response) => {
+  const username = (req as any).user.username;
+  const userRatings = await rating.find({ username }).toArray();
+  // omit the _id field
+  const ratings = userRatings.map(({ _id, ...rest }) => rest);
+  res.json(ratings);
+});
 app.post("/api/rate", authenticateJWT, async (req: Request, res: Response) => {
   const { movieId, score } = req.body;
   const username = (req as any).user.username;
@@ -53,7 +102,7 @@ app.post("/api/rate", authenticateJWT, async (req: Request, res: Response) => {
   if (!user) {
     return res.status(400).send("User not found");
   }
-  if (score < 1 || score > 5) {
+  if (score < 1 || score > 10 || isNaN(score)) {
     return res.status(400).send("Invalid score");
   }
   if (isNaN(movieId) || movieId === null) {
@@ -88,7 +137,6 @@ app.post("/api/register", async (req: Request, res: Response) => {
 
 // User login
 app.post("/api/login", async (req: Request, res: Response) => {
-  console.log(req.body);
   const { username, password } = req.body;
 
   const user = await users.findOne({ username });
@@ -101,21 +149,11 @@ app.post("/api/login", async (req: Request, res: Response) => {
     return res.status(400).send("Invalid username or password");
   }
 
-  const token = jwt.sign({ _id: user._id, username: user.username }, JWT_SECRET, { expiresIn: "1h" });
+  const token = jwt.sign({ _id: user._id, username: user.username }, JWT_SECRET, { expiresIn: "200h" });
   res.header("Authorization", `Bearer ${token}`).send("Logged in successfully");
   return token;
 });
 
-// Protected route example
-app.get("/api/movies2", authenticateJWT, (_req: Request, res: Response) => {
-  try {
-    movies.find().toArray()
-      .then((result: any) => res.json(result))
-      .catch((err: any) => res.status(500).send(err));
-  } catch (error) {
-    res.status(500).send(error);
-  }
-});
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
