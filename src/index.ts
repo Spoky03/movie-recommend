@@ -33,6 +33,7 @@ const app: Express = express();
 const movies = database.collection("movies");
 const rating = database.collection("rating");
 const users = database.collection("users");
+const friends = database.collection("friends");
 app.use(express.json());
 app.get(["/", "/api"], (_req: Request, res: Response) => {
   //list all available routes
@@ -171,6 +172,118 @@ app.post("/api/login", async (req: Request, res: Response) => {
   res.header("Authorization", `Bearer ${token}`).send("Logged in successfully");
   return token;
 });
+// my rated movies
+app.get("/api/myMovies", authenticateJWT, async (req: Request, res: Response) => {
+  const username = (req as any).user.username;
+  const userRatings = await rating.find({ username }).toArray();
+  // omit the _id field
+  const ratings = userRatings.map(({ _id, ...rest }) => rest);
+  // populate the movie details
+  const ratedMovies: Movie[] = await Promise.all(
+    ratings.map(async (rating) => {
+      const movie = await movies.findOne({ id: Number(rating.movieId) }) as Movie;
+      console.log(movie);
+      return { ...rating, ...movie };
+    })
+  );
+  res.json(ratedMovies);
+});
+// Friends
+app.get(
+  "/api/friends",
+  authenticateJWT,
+  async (req: Request, res: Response) => {
+    const user = await users.findOne({ username: (req as any).user.username });
+    if (!user) {
+      return res.status(400).send("User not found");
+    }
+    // find all the friends of the user
+    const userFriends = await friends.find({ user: user._id }).toArray();
+    // omit the _id field
+    const friendsList = userFriends.map(({ _id, ...rest }) => rest);
+    return res.json(friendsList);
+  }
+);
+app.post(
+  "/api/friends",
+  authenticateJWT,
+  async (req: Request, res: Response) => {
+    const { friendUsername } = req.body;
+    const user = await users.findOne({
+      username: (req as any).user.username,
+    });
+    if (!user) {
+      return res.status(400).send("User not found");
+    }
+    const friend = await users.findOne({ username: friendUsername });
+    if (!friend || friend.username === user.username) {
+      return res.status(400).send("Friend not found");
+    }
+    const userFriend = await friends.findOne({
+      user: user._id,
+      friend: friend._id,
+    });
+    if (userFriend) {
+      return res.status(400).send("Friend already exists");
+    }
+    await friends.insertOne({ user: user._id, friend: friend._id });
+    return res.send("Friend added successfully");
+  }
+);
+app.delete(
+  "/api/friends",
+  authenticateJWT,
+  async (req: Request, res: Response) => {
+    const { friendUsername } = req.body;
+    const user = await users.findOne({
+      username: (req as any).user.username,
+    });
+    if (!user) {
+      return res.status(400).send("User not found");
+    }
+    const friend = await users.findOne({ username: friendUsername });
+    if (!friend) {
+      return res.status(400).send("Friend not found");
+    }
+    const userFriend = await friends.findOne({
+      user: user._id,
+      friend: friend._id,
+    });
+    if (!userFriend) {
+      return res.status(400).send("Friend not found");
+    }
+    await friends.deleteOne({ user: user._id, friend: friend._id });
+    return res.send("Friend deleted successfully");
+  }
+);
+app.get(
+  "/api/friends/mutualMovies",
+  authenticateJWT,
+  async (req: Request, res: Response) => {
+    const user = await users.findOne({ username: (req as any).user.username });
+    if (!user) {
+      return res.status(400).send("User not found");
+    }
+    // find all the friends of the user
+    const userFriends = await friends.find({ user: user._id }).toArray();
+    // find all the movies rated by the user
+    const userRatings = await rating.find({ username: user.username }).toArray();
+    const userMovies = userRatings.map((rating) => rating.movieId);
+    // find all the movies rated by the friends
+    const friendsMovies = await Promise.all(
+      userFriends.map(async (friend) => {
+        const friendRatings = await rating
+          .find({ username: friend.friend })
+          .toArray();
+        return friendRatings.map((rating) => rating.movieId);
+      })
+    );
+    // find the common movies
+    const mutualMovies = friendsMovies.flat().filter((movie) => {
+      return userMovies.includes(movie);
+    });
+    return res.json(mutualMovies);
+  });
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
