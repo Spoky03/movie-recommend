@@ -2,13 +2,16 @@
 import express, { Express, Request, Response } from "express";
 import dotenv from "dotenv";
 import * as moviesService from "./service/requests";
-import { MongoClient, ServerApiVersion } from "mongodb";
+import { MongoClient, ObjectId, ServerApiVersion } from "mongodb";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { authenticateJWT } from "./middleware/auth";
 import { JWT_SECRET, PORT } from "./config";
 import { createUsersCollection } from "./lib/schemas";
 import { Movie } from "./interfaces/movie";
+import { Rating } from "./interfaces/rating";
+import { Friends } from "./interfaces/friends";
+import { User } from "./interfaces/user";
 const DB_URI = process.env.DB_URI;
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(DB_URI ?? "", {
@@ -30,10 +33,10 @@ const database = client.db("movie-recommend");
   }
 })();
 const app: Express = express();
-const movies = database.collection("movies");
-const rating = database.collection("rating");
-const users = database.collection("users");
-const friends = database.collection("friends");
+const movies = database.collection<Movie>("movies");
+const rating = database.collection<Rating>("rating");
+const users = database.collection<User>("users");
+const friends = database.collection<Friends>("friends");
 app.use(express.json());
 app.get(["/", "/api"], (_req: Request, res: Response) => {
   //list all available routes
@@ -226,8 +229,32 @@ app.post(
     if (userFriend) {
       return res.status(400).send("Friend already exists");
     }
-    await friends.insertOne({ user: user._id, friend: friend._id });
-    return res.send("Friend added successfully");
+    // determine if the friend already added the user as a friend and status is PENDING then update the status to ACCEPTED for both
+    const friendUser = await friends.findOne({
+      user: friend._id,
+      friend: user._id,
+    });
+    if (friendUser) {
+      await friends.updateOne(
+        { user: friend._id, friend: user._id },
+        { $set: { status: "ACCEPTED" } }
+      );
+      await friends.insertOne({
+        user: user._id,
+        friend: friend._id,
+        status: "ACCEPTED",
+        _id: new ObjectId(),
+      });
+      return res.send("Friend added successfully");
+    }
+    // add the friend to the user's friend list with status PENDING
+    await friends.insertOne({
+      user: user._id,
+      friend: friend._id,
+      status: "PENDING",
+      _id: new ObjectId(),
+    });
+    return res.send("Friend request sent successfully");
   }
 );
 app.delete(
@@ -273,7 +300,7 @@ app.get(
     const friendsMovies = await Promise.all(
       userFriends.map(async (friend) => {
         const friendRatings = await rating
-          .find({ username: friend.friend })
+          .find({ username: (await users.findOne({ _id: friend.friend }))?.username ?? "" })
           .toArray();
         return friendRatings.map((rating) => rating.movieId);
       })
@@ -284,6 +311,36 @@ app.get(
     });
     return res.json(mutualMovies);
   });
+// recommendations based on the user's friends mutual movies
+app.get("/api/friends/recommendations", authenticateJWT, async (req: Request, res: Response) => {
+  const user = await users.findOne({ username: (req as any).user.username });
+  if (!user) {
+    return res.status(400).send("User not found");
+  }
+  // find all the friends of the user
+  const userFriends = await friends.find({ user: user._id }).toArray();
+  // find all the movies rated by the user
+  const userRatings = await rating.find({ username: user.username }).toArray();
+  const userMovies = userRatings.map((rating) => rating.movieId);
+  // find all the movies rated by the friends
+  const friendsMovies = await Promise.all(
+    userFriends.map(async (friend) => {
+      const friendRatings = await rating
+        .find({ username: (await users.findOne({ _id: friend.friend }))?.username ?? "" })
+        .toArray();
+      return friendRatings.map((rating) => rating.movieId);
+    })
+  );
+  // find the common movies
+  const mutualMovies = friendsMovies.flat().filter((movie) => {
+    return userMovies.includes(movie);
+  });
+  // await moviesService.getSimilarMovies(movieId) for random movie from mutualMovies
+  const randomMovie = mutualMovies[Math.floor(Math.random() * mutualMovies.length)];
+  const recommendation = await moviesService.getRecommendedMovies(randomMovie);
+  // return the recommendations and the random movie used to get the recommendations
+  return res.json({ recommendation, randomMovie });
+});
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

@@ -16,5 +16,10 @@ const getSimilarMovies = async (movieId: number) => {
   response.data.results.sort((a: Movie, b: Movie) => b.popularity - a.popularity);
   return response.data.results;
 };
+const getRecommendedMovies = async (movieId: number) => {
+  const response = await requestWrapper.getWrapper(`/movie/${movieId}/recommendations?language=en-US&page=1`);
+  response.data.results.sort((a: Movie, b: Movie) => b.popularity - a.popularity);
+  return response.data.results;
+}
 
-export { searchMovies, getSimilarMovies };
+export { searchMovies, getSimilarMovies, getRecommendedMovies };

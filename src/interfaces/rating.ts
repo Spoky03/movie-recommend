@@ -1,5 +1,8 @@
+import { ObjectId } from "mongodb";
+
 export interface Rating {
-    amount:  1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+    score:  1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
     movieId: number;
-    userId: number;
+    username: string;
+    _id?: ObjectId;
 }
