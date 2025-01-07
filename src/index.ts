@@ -124,6 +124,12 @@ app.post("/api/rate", authenticateJWT, async (req: Request, res: Response) => {
     return res.status(400).send("Invalid movieId");
   }
 
+  //Deleting from user watchlist
+  const watchlistElement = await watchlists.findOne({ username, movieId });
+  if(watchlistElement) {
+      await watchlists.deleteOne({ username, movieId });
+  }
+
   const userRating = await rating.findOne({ username, movieId });
   if (userRating) {
     await rating.updateOne({ username, movieId }, { $set: { score } });
@@ -408,4 +414,34 @@ app.get(
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+});
+//Watch lists
+app.post("/api/watchlist", authenticateJWT, async (req: Request, res: Response) => {
+    const { movieId } = req.body;
+    const username = (req as any).user.username;
+
+    const user = await users.findOne({ username });
+    if (!user) {
+        return res.status(400).send("User not found");
+    }
+    if (isNaN(movieId) || movieId === null) {
+        return res.status(400).send("Invalid movieId");
+    }
+
+    const userWatchlist = await watchlists.findOne({ username, movieId });
+    if (userWatchlist) {
+    } else {
+        await watchlists.insertOne({ username, movieId });
+    }
+    res.send("Movie added to your watchlist successfully");
+    return;
+});
+
+// Rate a movie
+app.get("/api/watchlist", authenticateJWT, async (req: Request, res: Response) => {
+    const username = (req as any).user.username;
+    const userWatchlist = await watchlists.find({ username }).toArray();
+    // omit the _id field
+    const watchlist = userWatchlist.map(({ _id, ...rest }) => rest);
+    res.json(watchlist);
 });
