@@ -13,6 +13,7 @@ import { Rating } from "./interfaces/rating";
 import { Friends } from "./interfaces/friends";
 import { User } from "./interfaces/user";
 import { Recommendations } from "./interfaces/recommendations";
+import { Watchlist } from "./interfaces/Watchlist";
 const DB_URI = process.env.DB_URI;
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(DB_URI ?? "", {
@@ -39,6 +40,7 @@ const rating = database.collection<Rating>("rating");
 const users = database.collection<User>("users");
 const friends = database.collection<Friends>("friends");
 const recommendations = database.collection<Recommendations>("recommendations");
+const watchlists = database.collection<Watchlist>("watchlist");
 app.use(express.json());
 app.get(["/", "/api"], (_req: Request, res: Response) => {
   //list all available routes
@@ -431,7 +433,7 @@ app.post("/api/watchlist", authenticateJWT, async (req: Request, res: Response) 
     const userWatchlist = await watchlists.findOne({ username, movieId });
     if (userWatchlist) {
     } else {
-        await watchlists.insertOne({ username, movieId });
+        await watchlists.insertOne({ username, movieId } as Watchlist);
     }
     res.send("Movie added to your watchlist successfully");
     return;
