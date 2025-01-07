@@ -12,6 +12,7 @@ import { Movie } from "./interfaces/movie";
 import { Rating } from "./interfaces/rating";
 import { Friends } from "./interfaces/friends";
 import { User } from "./interfaces/user";
+import { Recommendations } from "./interfaces/recommendations";
 const DB_URI = process.env.DB_URI;
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(DB_URI ?? "", {
@@ -37,6 +38,7 @@ const movies = database.collection<Movie>("movies");
 const rating = database.collection<Rating>("rating");
 const users = database.collection<User>("users");
 const friends = database.collection<Friends>("friends");
+const recommendations = database.collection<Recommendations>("recommendations");
 app.use(express.json());
 app.get(["/", "/api"], (_req: Request, res: Response) => {
   //list all available routes
@@ -170,27 +172,33 @@ app.post("/api/login", async (req: Request, res: Response) => {
   const token = jwt.sign(
     { _id: user._id, username: user.username },
     JWT_SECRET,
-    { expiresIn: "200h" }
+    { expiresIn: "9999h" }
   );
   res.header("Authorization", `Bearer ${token}`).send("Logged in successfully");
   return token;
 });
 // my rated movies
-app.get("/api/myMovies", authenticateJWT, async (req: Request, res: Response) => {
-  const username = (req as any).user.username;
-  const userRatings = await rating.find({ username }).toArray();
-  // omit the _id field
-  const ratings = userRatings.map(({ _id, ...rest }) => rest);
-  // populate the movie details
-  const ratedMovies: Movie[] = await Promise.all(
-    ratings.map(async (rating) => {
-      const movie = await movies.findOne({ id: Number(rating.movieId) }) as Movie;
-      console.log(movie);
-      return { ...rating, ...movie };
-    })
-  );
-  res.json(ratedMovies);
-});
+app.get(
+  "/api/myMovies",
+  authenticateJWT,
+  async (req: Request, res: Response) => {
+    const username = (req as any).user.username;
+    const userRatings = await rating.find({ username }).toArray();
+    // omit the _id field
+    const ratings = userRatings.map(({ _id, ...rest }) => rest);
+    // populate the movie details
+    const ratedMovies: Movie[] = await Promise.all(
+      ratings.map(async (rating) => {
+        const movie = (await movies.findOne({
+          id: Number(rating.movieId),
+        })) as Movie;
+        console.log(movie);
+        return { ...rating, ...movie };
+      })
+    );
+    res.json(ratedMovies);
+  }
+);
 // Friends
 app.get(
   "/api/friends",
@@ -294,13 +302,18 @@ app.get(
     // find all the friends of the user
     const userFriends = await friends.find({ user: user._id }).toArray();
     // find all the movies rated by the user
-    const userRatings = await rating.find({ username: user.username }).toArray();
+    const userRatings = await rating
+      .find({ username: user.username })
+      .toArray();
     const userMovies = userRatings.map((rating) => rating.movieId);
     // find all the movies rated by the friends
     const friendsMovies = await Promise.all(
       userFriends.map(async (friend) => {
         const friendRatings = await rating
-          .find({ username: (await users.findOne({ _id: friend.friend }))?.username ?? "" })
+          .find({
+            username:
+              (await users.findOne({ _id: friend.friend }))?.username ?? "",
+          })
           .toArray();
         return friendRatings.map((rating) => rating.movieId);
       })
@@ -310,37 +323,88 @@ app.get(
       return userMovies.includes(movie);
     });
     return res.json(mutualMovies);
-  });
-// recommendations based on the user's friends mutual movies
-app.get("/api/friends/recommendations", authenticateJWT, async (req: Request, res: Response) => {
-  const user = await users.findOne({ username: (req as any).user.username });
-  if (!user) {
-    return res.status(400).send("User not found");
   }
-  // find all the friends of the user
-  const userFriends = await friends.find({ user: user._id }).toArray();
-  // find all the movies rated by the user
-  const userRatings = await rating.find({ username: user.username }).toArray();
-  const userMovies = userRatings.map((rating) => rating.movieId);
-  // find all the movies rated by the friends
-  const friendsMovies = await Promise.all(
-    userFriends.map(async (friend) => {
-      const friendRatings = await rating
-        .find({ username: (await users.findOne({ _id: friend.friend }))?.username ?? "" })
-        .toArray();
-      return friendRatings.map((rating) => rating.movieId);
-    })
-  );
-  // find the common movies
-  const mutualMovies = friendsMovies.flat().filter((movie) => {
-    return userMovies.includes(movie);
-  });
-  // await moviesService.getSimilarMovies(movieId) for random movie from mutualMovies
-  const randomMovie = mutualMovies[Math.floor(Math.random() * mutualMovies.length)];
-  const recommendation = await moviesService.getRecommendedMovies(randomMovie);
-  // return the recommendations and the random movie used to get the recommendations
-  return res.json({ recommendation, randomMovie });
-});
+);
+// recommendations based on the user's friends mutual movies
+app.get(
+  "/api/friends/recommendations",
+  authenticateJWT,
+  async (req: Request, res: Response) => {
+    const user = await users.findOne({ username: (req as any).user.username });
+    if (!user) {
+      return res.status(400).send("User not found");
+    }
+    // find all the friends of the user
+    const userFriends = await friends.find({ user: user._id }).toArray();
+    const friendUsernames = await Promise.all(
+      userFriends.map(async (friend) => {
+        const friendUser = await users.findOne({ _id: friend.friend });
+        return friendUser?.username;
+      })
+    );
+
+    // find all the movies rated by the user and their friends
+    const allRatings = await rating
+      .aggregate([
+        {
+          $match: {
+            username: { $in: [user.username, ...friendUsernames] },
+          },
+        },
+        {
+          $group: {
+            _id: "$username",
+            movies: { $push: "$movieId" },
+          },
+        },
+      ])
+      .toArray();
+
+    const userMovies =
+      allRatings.find((r) => r._id === user.username)?.movies ?? [];
+    const friendsMovies = allRatings
+      .filter((r) => r._id !== user.username)
+      .flatMap((r) => r.movies);
+
+    console.log("User Movies:", userMovies);
+    console.log("Friends Movies:", friendsMovies);
+    // find the common movies
+    const mutualMovies = friendsMovies.flat().filter((movie) => {
+      return userMovies.includes(movie);
+    });
+    // await moviesService.getSimilarMovies(movieId) for random movie from mutualMovies
+    const randomMovie =
+      mutualMovies[Math.floor(Math.random() * mutualMovies.length)];
+    const recommendation = await moviesService.getRecommendedMovies(
+      randomMovie
+    );
+    // for each recommendation, check if the user has already rated it, if so, remove it from the recommendations
+    const recommendation_filtered = recommendation.filter((movie: Movie) => {
+      return !userMovies.includes(movie.id) && !friendsMovies.includes(movie.id);
+    });
+    // cut the recommendations
+    // for each recommendation, get the movie details from the database and return it with the recommendation
+    const recommendationData = await Promise.all(
+      recommendation_filtered.slice(0, 5).map(async (movie: Movie) => {
+        const movieDetails = await movies.findOne({ id: movie.id });
+        return { ...movie, ...movieDetails };
+      })
+    );
+    // for each recommenation store the recommendation in the database with the userId, movieId, updatedAt and basedOn fields
+    await recommendations.insertMany(
+      recommendationData.map((movie) => {
+        return {
+          userId: user._id,
+          movieId: movie.id,
+          updatedAt: new Date(),
+          basedOn: randomMovie,
+        };
+      })
+    );
+    // return the 
+    return res.json({recommendations: recommendationData, basedOn: randomMovie});
+  }
+);
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
