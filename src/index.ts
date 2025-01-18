@@ -105,17 +105,16 @@ app.get("/api/similar", async (req: Request, res: Response) => {
 });
 // Rate a movie
 app.get("/api/rate", authenticateJWT, async (req: Request, res: Response) => {
-  const username = (req as any).user.username;
-  const userRatings = await rating.find({ username }).toArray();
+  const userId = (req as any).user._id;
+  const userRatings = await rating.find({ userId }).toArray();
   // omit the _id field
   const ratings = userRatings.map(({ _id, ...rest }) => rest);
   res.json(ratings);
 });
 app.post("/api/rate", authenticateJWT, async (req: Request, res: Response) => {
   const { movieId, score } = req.body;
-  const username = (req as any).user.username;
-
-  const user = await users.findOne({ username });
+  const userId = (req as any).user._id;
+  const user = await users.findOne({ _id: ObjectId.createFromHexString(userId) });
   if (!user) {
     return res.status(400).send("User not found");
   }
@@ -127,16 +126,16 @@ app.post("/api/rate", authenticateJWT, async (req: Request, res: Response) => {
   }
 
   //Deleting from user watchlist
-  const watchlistElement = await watchlists.findOne({ username, movieId });
+  const watchlistElement = await watchlists.findOne({ userId, movieId });
   if(watchlistElement) {
-      await watchlists.deleteOne({ username, movieId });
+      await watchlists.deleteOne({ userId: ObjectId.createFromHexString(userId), movieId });
   }
 
-  const userRating = await rating.findOne({ username, movieId });
+  const userRating = await rating.findOne({ userId: ObjectId.createFromHexString(userId), movieId });
   if (userRating) {
-    await rating.updateOne({ username, movieId }, { $set: { score } });
+    await rating.updateOne({ userId: ObjectId.createFromHexString(userId), movieId }, { $set: { score } });
   } else {
-    await rating.insertOne({ username, movieId, score });
+    await rating.insertOne({ userId: ObjectId.createFromHexString(userId), movieId, score });
   }
   res.send("Movie rated successfully");
   return;
@@ -190,8 +189,8 @@ app.get(
   "/api/myMovies",
   authenticateJWT,
   async (req: Request, res: Response) => {
-    const username = (req as any).user.username;
-    const userRatings = await rating.find({ username }).toArray();
+    const userId = (req as any).user.username;
+    const userRatings = await rating.find({ userId: ObjectId.createFromHexString(userId) }).toArray();
     // omit the _id field
     const ratings = userRatings.map(({ _id, ...rest }) => rest);
     // populate the movie details
@@ -311,7 +310,7 @@ app.get(
     const userFriends = await friends.find({ user: user._id }).toArray();
     // find all the movies rated by the user
     const userRatings = await rating
-      .find({ username: user.username })
+      .find({ userId: user._id })
       .toArray();
     const userMovies = userRatings.map((rating) => rating.movieId);
     // find all the movies rated by the friends
@@ -319,8 +318,7 @@ app.get(
       userFriends.map(async (friend) => {
         const friendRatings = await rating
           .find({
-            username:
-              (await users.findOne({ _id: friend.friend }))?.username ?? "",
+            userId: friend.friend,
           })
           .toArray();
         return friendRatings.map((rating) => rating.movieId);
@@ -338,46 +336,19 @@ app.get(
   "/api/friends/recommendations",
   authenticateJWT,
   async (req: Request, res: Response) => {
-    const user = await users.findOne({ username: (req as any).user.username });
-    if (!user) {
+    const user = await users.findOne({ _id: ObjectId.createFromHexString((req as any).user._id) });
+    const friendId = req.body.friend;
+    const friend = await users.findOne({ _id: ObjectId.createFromHexString(friendId) });
+    if (!user || !friend) {
       return res.status(400).send("User not found");
     }
-    // find all the friends of the user
-    const userFriends = await friends.find({ user: user._id }).toArray();
-    const friendUsernames = await Promise.all(
-      userFriends.map(async (friend) => {
-        const friendUser = await users.findOne({ _id: friend.friend });
-        return friendUser?.username;
-      })
-    );
-
-    // find all the movies rated by the user and their friends
-    const allRatings = await rating
-      .aggregate([
-        {
-          $match: {
-            username: { $in: [user.username, ...friendUsernames] },
-          },
-        },
-        {
-          $group: {
-            _id: "$username",
-            movies: { $push: "$movieId" },
-          },
-        },
-      ])
-      .toArray();
-
-    const userMovies =
-      allRatings.find((r) => r._id === user.username)?.movies ?? [];
-    const friendsMovies = allRatings
-      .filter((r) => r._id !== user.username)
-      .flatMap((r) => r.movies);
-
-    console.log("User Movies:", userMovies);
-    console.log("Friends Movies:", friendsMovies);
+    //find all the movies that have been rated by the user and the friend
+    const userRatings = await rating.find({ userId: user._id }).toArray();
+    const userMovies = userRatings.map((rating) => rating.movieId);
+    const friendRatings = await rating.find({ userId: friend._id }).toArray();
+    const friendsMovies = friendRatings.map((rating) => rating.movieId);
     // find the common movies
-    const mutualMovies = friendsMovies.flat().filter((movie) => {
+    const mutualMovies = friendsMovies.filter((movie) => {
       return userMovies.includes(movie);
     });
     // await moviesService.getSimilarMovies(movieId) for random movie from mutualMovies
@@ -420,9 +391,9 @@ app.listen(PORT, () => {
 //Watch lists
 app.post("/api/watchlist", authenticateJWT, async (req: Request, res: Response) => {
     const { movieId } = req.body;
-    const username = (req as any).user.username;
+    const userId = (req as any).user._id;
 
-    const user = await users.findOne({ username });
+    const user = await users.findOne({ _id: userId });
     if (!user) {
         return res.status(400).send("User not found");
     }
@@ -430,10 +401,10 @@ app.post("/api/watchlist", authenticateJWT, async (req: Request, res: Response) 
         return res.status(400).send("Invalid movieId");
     }
 
-    const userWatchlist = await watchlists.findOne({ username, movieId });
+    const userWatchlist = await watchlists.findOne({ userId, movieId });
     if (userWatchlist) {
     } else {
-        await watchlists.insertOne({ username, movieId } as Watchlist);
+        await watchlists.insertOne({ userId, movieId });
     }
     res.send("Movie added to your watchlist successfully");
     return;
@@ -441,8 +412,8 @@ app.post("/api/watchlist", authenticateJWT, async (req: Request, res: Response) 
 
 // Rate a movie
 app.get("/api/watchlist", authenticateJWT, async (req: Request, res: Response) => {
-    const username = (req as any).user.username;
-    const userWatchlist = await watchlists.find({ username }).toArray();
+    const userId = (req as any).user._id;
+    const userWatchlist = await watchlists.find({ userId }).toArray();
     // omit the _id field
     const watchlist = userWatchlist.map(({ _id, ...rest }) => rest);
     res.json(watchlist);
