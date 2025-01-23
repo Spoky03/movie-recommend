@@ -106,7 +106,7 @@ app.get("/api/similar", async (req: Request, res: Response) => {
 // Rate a movie
 app.get("/api/rate", authenticateJWT, async (req: Request, res: Response) => {
   const userId = (req as any).user._id;
-  const userRatings = await rating.find({ userId }).toArray();
+  const userRatings = await rating.find({ userId: ObjectId.createFromHexString(userId) }).toArray();
   // omit the _id field
   const ratings = userRatings.map(({ _id, ...rest }) => rest);
   res.json(ratings);
