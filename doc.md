@@ -13,27 +13,20 @@
 ### 1.1 Opis projektu
 Aplikacja do oceniania i otrzymywania rekomendacji filmów na podstawie historii oglądania.
 
-### 1.2 Cele aplikacji
-- Ocenianie filmów.
-- Rekomendacje
----
+### 1.2 Cele i założenia aplikacji
+- Stworzenie aplikacji umożliwiającej zapisywanie filmów które użytkownik objerzał
+- Otrzymywanie rekomendacji na podstawie obejrzyanych filmów
+- Otrzymywanie rekomendowanych filmów dla danego użytkownika na podstawie filmów obejrzanych wspólnie z jego znajomymi.
 
 ## 2. Architektura Systemu
 
-### 2.1 Ogólny Przegląd
-Diagram przedstawiający ogólną architekturę aplikacji (np. diagram komponentów lub przepływu danych).
-
-### 2.2 Technologie
 - **Frontend**: --
 - **Backend**: Express.js
 - **Baza Danych**: MongoDB
-
-### 2.3 Wzorce Projektowe
-Krótki opis kluczowych wzorców projektowych używanych w aplikacji (np. MVC, MVVM, CQRS).
-
 ---
 
 ## 3. Frontend
+***Nie zrealizowany***
 
 ---
 
@@ -63,7 +56,7 @@ Dokumentacja endpointów API
 |--------|----------------------|---------------------------------------|---------------------|
 | POST   | `/api/register`      | Tworzy nowego użytkownika             | `username`, `password`    |
 | POST   | `/api/login`         | Loguje użytkownika i zwraca JWT       | `username`, `password`    |
-| GET    | `/api/search`        | Wyszukuje film po nazwie w bazie danych i wykonuje zapytanie do TMDB | `query`     |
+| GET    | `/api/search?query=`        | Wyszukuje film po nazwie w bazie danych i wykonuje zapytanie do TMDB | `query=<nazwa filmu>`     |
 | GET    | `/api/movies`        | Zwraca wszystkie filmy z bazy danych  | -                   |
 | GET    | `/api/similar`       | Zwraca podobne filmy na podstawie ID  | `movieId`           |
 | GET    | `/api/rate`          | Zwraca oceny użytkownika              | -                   |
@@ -76,6 +69,78 @@ Dokumentacja endpointów API
 | GET    | `/api/friends/recommendations` | Zwraca rekomendacje filmów na podstawie znajomych | `friend` |
 | POST   | `/api/watchlist`     | Dodaje film do listy do obejrzenia    | `movieId`           |
 | GET    | `/api/watchlist`     | Zwraca listę filmów do obejrzenia     | -                   |
+### 4.4 Przykładowe Zapytania
+
+#### Wyszukiwanie filmów
+**Endpoint**: `/api/search?query=<nazwa filmu>`
+
+**Przykład**:
+```bash
+curl -X GET "http://localhost:3000/api/search?query=django"
+```
+```json
+[
+    {
+        adult: false,
+        backdrop_path: "/5Lbm0gpFDRAPIV1Cth6ln9iL1ou.jpg",
+        genre_ids: [
+        18,
+        37
+        ],
+        id: 68718,
+        original_language: "en",
+        original_title: "Django Unchained",
+        overview: "With the help of a German bounty hunter, a freed slave sets out to rescue his wife from a brutal Mississippi plantation owner.",
+        popularity: 106.147,
+        poster_path: "/7oWY8VDWW7thTzWh3OKYRkWUlD5.jpg",
+        release_date: "2012-12-25",
+        title: "Django Unchained",
+        video: false,
+        vote _average: 8.2,
+        vote_count: 26187
+    },
+    {
+        title: "Viva! Django",
+        ...other fields...
+    }
+]
+```
+**Przykład 2**:
+```bash
+curl -X GET "http://localhost:3000/api/friends/recommendations" -H "Authorization: Bearer <JWT_TOKEN>"
+```
+
+```json
+{
+    recommendations: [
+        {
+            backdrop_path: "/suaEOtk1N1sgg2MTM7oZd2cfVp3.jpg",
+            id: 680,
+            title: "Pulp Fiction",
+            original_title: "Pulp Fiction",
+            overview: "A burger-loving hit man, his philosophical partner, a drug-addled gangster's moll and a washed-up boxer converge in this sprawling, comedic crime caper. Their adventures unfurl in three stories that ingeniously trip back and forth in time.",
+            poster_path: "/vQWk5YBFWF4bZaofAbv0tShwBvQ.jpg",
+            media_type: "movie",
+            adult: false,
+            original_language: "en",
+            genre_ids: [
+                53,
+                80
+            ],
+            popularity: 175.724,
+            release_date: "1994-09-10",
+            video: false,
+            vote_average: 8.488,
+            vote_count: 28193
+        },
+        ...5 innych rekomendacji...
+    ],
+    basedOn: "68718"
+}
+```
+***klucz `basedOn` informuje o id filmu na podstawie którego wygenerowanie zostały polecane filmy. W tym przypadku id `68718` oznacza film `Django Unchained`***
+
+Taka rekomendacja jest uzasadniona, ponieważ dane filmy mają wiele wspólnych mianowników. Reżyser, można je zakwalifikować jako modern westerny lub czarna komedia.
 
 ### 4.4 Autoryzacja i Autentykacja
 JWT, BCRYPT
@@ -110,6 +175,31 @@ Opis głównych tabel w bazie danych i ich pól.
 - **movies** -> **watchlist**: Jeden film może być na liście do obejrzenia wielu użytkowników.
 
 ---
+## 6. Instrukcja uruchiomienia
 
-**Dokument przygotowany przez**: Stefan Grzelec 
+### 6.1 Wymagania
+- Node.js
+- npm
+- git
+
+### 6.2 Konfiguracja
+- **sklonowanie repozytorium**
+    ```sh
+    git clone https://github.com/Spoky03/movie-recommend
+    cd movie-recommend
+    ```
+- **dodanie kluczy do pliku `.env`**
+    ```sh
+    PORT=3001 #port
+    TMDB_API_KEY=<KLUCZ API> # klucz do serwisu the movie database
+    DB_URI="mongodb+srv://stefangrzelec:<HASŁO>@cluster0.v35pr.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0" #URI bazy danych; zastąpić <HASŁO> na hasło do bazy danych
+    JWT_SECRET="secret" # ciąg znaków używany do veryfikacji JWT
+    ```
+### 6.3 Uruchomienie
+```sh
+npm install
+npm run dev #server developerski
+```
+
+**Dokument przygotowany przez**: Stefan Grzelec, Maks Buhai
 **Data aktualizacji**: 23-01-2025
