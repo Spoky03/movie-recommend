@@ -338,6 +338,9 @@ app.get(
   async (req: Request, res: Response) => {
     const user = await users.findOne({ _id: ObjectId.createFromHexString((req as any).user._id) });
     const friendId = req.body.friend;
+    if (!friendId) {
+      return res.status(400).send("Friend not found");
+    }
     const friend = await users.findOne({ _id: ObjectId.createFromHexString(friendId) });
     if (!user || !friend) {
       return res.status(400).send("User not found");
