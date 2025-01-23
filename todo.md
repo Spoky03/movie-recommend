@@ -8,11 +8,11 @@ movie recomendations
 - [x] problemy
 - [x] przykladowe zapytania
 - [x] instrukcja uruchowmienia
-- [] imiona i oceny
+- [ ] imiona i oceny
 ## #preezka
-- [] 15 minut
-- [] co zrealizowalismy
-- [] jakie rezczy udalo sie zrobic
-- [] czego sie nauczylismy podczas trwania projektu
-- [] jakies fajne zapytanie bazodanowe
-- [] co nam sie podobalo a co nie
+- [ ] 15 minut
+- [ ] co zrealizowalismy
+- [ ] jakie rezczy udalo sie zrobic
+- [ ] czego sie nauczylismy podczas trwania projektu
+- [ ] jakies fajne zapytanie bazodanowe
+- [ ] co nam sie podobalo a co nie
